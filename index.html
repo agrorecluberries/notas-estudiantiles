@@ -167,6 +167,37 @@ if (!out.comportamiento) out.comportamiento = {};
 return out;
 }
 
+function parseSiagieRows(rows) {
+if (!rows || !rows.length) return null;
+const titleCell = String((rows[0] && rows[0][0]) || "");
+if (!/INFORME DE PROGRESO/i.test(titleCell)) return null;
+const nameRow = rows[6] || [];
+const studentName = String(nameRow[2] || "").trim();
+if (!studentName) return null;
+const columns = [];
+const dataRow = [studentName];
+let currentArea = "";
+for (let r = 11; r <= 40; r++) {
+const row = rows[r];
+if (!row) continue;
+const areaCell = String(row[0] || "").trim();
+if (areaCell) currentArea = areaCell;
+const competencia = String(row[1] || "").trim();
+if (!competencia || !currentArea) continue;
+const periodValues = [0, 1, 2, 3].map((idx) => {
+const raw = row[2 + idx];
+return raw === undefined || raw === null ? "" : String(raw).trim();
+});
+if (!periodValues.some((v) => v !== "")) continue;
+BIMESTRE_LABELS.forEach((b, idx) => {
+dataRow.push(periodValues[idx]);
+columns.push({ type: "criterio", area: currentArea, criterio: competencia, bim: b, index: dataRow.length - 1 });
+});
+}
+if (!columns.length) return null;
+return { columns: columns, dataRows: [dataRow] };
+}
+
 function waitForFirebase() {
 return new Promise((resolve) => {
 if (window.__firebaseReady) return resolve();
@@ -880,7 +911,9 @@ function GradesTab({ data, filteredStudents, search, setSearch, gradesBuffer, co
 const [selectedId, setSelectedId] = useState(null);
 const [importPreview, setImportPreview] = useState(null);
 const [importError, setImportError] = useState("");
+const [importSource, setImportSource] = useState("");
 const fileInputRef = React.useRef(null);
+const siagieFileInputRef = React.useRef(null);
 
 const selectedStudent = data.students.find((s) => s.id === selectedId) || null;
 
@@ -951,9 +984,35 @@ if (!columns.length || !dataRows.length) {
 setImportError("No se detectaron columnas o alumnos reconocibles. Usa la plantilla descargable como base.");
 return;
 }
+setImportSource("plantilla");
 setImportPreview({ columns: columns, dataRows: dataRows });
 } catch (err) {
 setImportError("No se pudo leer el archivo. Sube un Excel (.xlsx) o CSV válido.");
+}
+};
+reader.readAsArrayBuffer(file);
+}
+
+function handleSiagieFileChange(e) {
+const file = e.target.files && e.target.files[0];
+e.target.value = "";
+if (!file) return;
+setImportError("");
+const reader = new FileReader();
+reader.onload = (evt) => {
+try {
+const wb = XLSX.read(evt.target.result, { type: "array" });
+const sheet = wb.Sheets[wb.SheetNames[0]];
+const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+const parsed = parseSiagieRows(rows);
+if (!parsed) {
+setImportError("No se reconoce este archivo como un Informe de Progreso del Estudiante (SIAGIE). Verifica que sea el formato oficial y que el nombre del alumno esté completo.");
+return;
+}
+setImportSource("siagie");
+setImportPreview(parsed);
+} catch (err) {
+setImportError("No se pudo leer el archivo. Sube un Excel (.xlsx) válido.");
 }
 };
 reader.readAsArrayBuffer(file);
@@ -1009,6 +1068,7 @@ if (bimIdx !== -1) comportamiento2[student.id].b[bimIdx] = val;
 
 onApplyImport({ ...data, students: students2, areas: areas2, grades: grades2, comportamiento: comportamiento2 });
 setImportPreview(null);
+setImportSource("");
 }
 
 const importAreaCount = importPreview ? new Set(importPreview.columns.filter((c) => c.type !== "comportamiento").map((c) => c.area)).size : 0;
@@ -1025,6 +1085,11 @@ className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 tex
 Importar Excel
 </button>
 <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
+<button type="button" onClick={() => siagieFileInputRef.current && siagieFileInputRef.current.click()}
+className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg transition">
+Subir Informe de Progreso (SIAGIE)
+</button>
+<input ref={siagieFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleSiagieFileChange} />
 <button onClick={onSave} disabled={!dirty || saving}
 className={`ml-auto text-sm font-medium px-4 py-2 rounded-lg transition ${dirty ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-slate-200 text-slate-400"}`}>
 {saving ? "Guardando..." : dirty ? "Guardar cambios" : "Guardado"}
@@ -1035,13 +1100,19 @@ className={`ml-auto text-sm font-medium px-4 py-2 rounded-lg transition ${dirty 
 
 {importPreview && (
 <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-4 text-sm">
-<p className="text-indigo-800 font-medium mb-1">Vista previa de importación</p>
+<p className="text-indigo-800 font-medium mb-1">
+{importSource === "siagie" ? "Vista previa: Informe de Progreso (SIAGIE)" : "Vista previa de importación"}
+</p>
 <p className="text-indigo-700 mb-3">
-Se detectaron {importPreview.dataRows.length} alumno(s) y {importAreaCount} área(s). Los alumnos, áreas o criterios nuevos se agregarán automáticamente.
+{importSource === "siagie" ? (
+<>Se detectó al alumno <strong>{importPreview.dataRows[0][0]}</strong> con {importAreaCount} área(s) curriculares. Las calificaciones (AD, A, B, C) se cargarán tal como aparecen en el informe; las áreas o competencias nuevas se agregarán automáticamente.</>
+) : (
+<>Se detectaron {importPreview.dataRows.length} alumno(s) y {importAreaCount} área(s). Los alumnos, áreas o criterios nuevos se agregarán automáticamente.</>
+)}
 </p>
 <div className="flex gap-2">
 <button onClick={confirmImport} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Aplicar cambios</button>
-<button onClick={() => setImportPreview(null)} className="text-slate-500 text-sm font-medium px-4 py-2">Cancelar</button>
+<button onClick={() => { setImportPreview(null); setImportSource(""); }} className="text-slate-500 text-sm font-medium px-4 py-2">Cancelar</button>
 </div>
 </div>
 )}
