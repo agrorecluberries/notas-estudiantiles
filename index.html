@@ -1,793 +1,1128 @@
 <!DOCTYPE html>
 <html lang="es">
-     <head>
-          <meta charset="UTF-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <title>Portal de Notas</title>
-     <script src="https://cdn.tailwindcss.com"></script>
-     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-     <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-     </head>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Portal de Notas</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
 <body>
-     <div id="root"></div>
+<div id="root"></div>
 
-     <!-- ====================================================================
-          CONFIGURACIÓN DE FIREBASE (ya conectada al proyecto notas-clase)
-     ====================================================================== -->
-     <script type="module">
-            import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-            import { getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+<!-- ====================================================================
+CONFIGURACIÓN DE FIREBASE (ya conectada al proyecto notas-clase)
+====================================================================== -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-            const firebaseConfig = {
-                     apiKey: "AIzaSyDUr6cxFEdkOpXjKTpGil8-sAor_CbdUXU",
-                     authDomain: "notas-clase-1d0d4.firebaseapp.com",
-                     projectId: "notas-clase-1d0d4",
-                     storageBucket: "notas-clase-1d0d4.firebasestorage.app",
-                     messagingSenderId: "352792565163",
-                     appId: "1:352792565163:web:f4e2f088603852f803eeee"
-            };
+const firebaseConfig = {
+apiKey: "AIzaSyDUr6cxFEdkOpXjKTpGil8-sAor_CbdUXU",
+authDomain: "notas-clase-1d0d4.firebaseapp.com",
+projectId: "notas-clase-1d0d4",
+storageBucket: "notas-clase-1d0d4.firebasestorage.app",
+messagingSenderId: "352792565163",
+appId: "1:352792565163:web:f4e2f088603852f803eeee"
+};
 
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            const dataRef = doc(db, "classroom", "data");
-            const filesCol = collection(db, "classroom_files");
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const dataRef = doc(db, "classroom", "data");
+const filesCol = collection(db, "classroom_files");
 
-            window.__loadData = async function () {
-                     const snap = await getDoc(dataRef);
-                     if (snap.exists()) return snap.data();
-                              return null;
-            };
+window.__loadData = async function () {
+const snap = await getDoc(dataRef);
+if (snap.exists()) return snap.data();
+return null;
+};
 
-            window.__saveData = async function (data) {
-                     await setDoc(dataRef, data);
-                     return true;
-            };
+window.__saveData = async function (data) {
+await setDoc(dataRef, data);
+return true;
+};
 
-            window.__listFiles = async function () {
-                     const snap = await getDocs(filesCol);
-                     const list = [];
-                     snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
-                     list.sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0));
-                     return list;
-            };
+window.__listFiles = async function () {
+const snap = await getDocs(filesCol);
+const list = [];
+snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+list.sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0));
+return list;
+};
 
-            window.__uploadFile = async function (file) {
-                     await addDoc(filesCol, { ...file, uploadedAt: Date.now() });
-                     return true;
-            };
+window.__uploadFile = async function (file) {
+await addDoc(filesCol, { ...file, uploadedAt: Date.now() });
+return true;
+};
 
-            window.__deleteFile = async function (id) {
-                     await deleteDoc(doc(db, "classroom_files", id));
-                     return true;
-            };
+window.__deleteFile = async function (id) {
+await deleteDoc(doc(db, "classroom_files", id));
+return true;
+};
 
-            // Señal de que Firebase ya está listo para usarse
-            window.__firebaseReady = true;
-            window.dispatchEvent(new Event("firebase-ready"));
-     </script>
+// Señal de que Firebase ya está listo para usarse
+window.__firebaseReady = true;
+window.dispatchEvent(new Event("firebase-ready"));
+</script>
 
-     <script type="text/babel">
-          const { useState, useEffect, useMemo } = React;
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
 
-          const emptyData = () => ({
-                 teacherPassword: null,
-                 students: [],
-                 subjects: [],
-                 grades: {},
-          });
+const emptyData = () => ({
+teacherPassword: null,
+students: [],
+areas: [],
+grades: {},
+comportamiento: {},
+});
 
-          const MAX_FILE_BYTES = 700 * 1024;
+const MAX_FILE_BYTES = 700 * 1024;
 
-          function generateId() {
-                 return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-          }
+const SCHOOL_SHIELD_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFcAAABtCAMAAADj9w2VAAABHGlDQ1BJQ0MgUHJvZmlsZQAAeJxjYGDiyUnOLWYSYGDIzSspCnJ3UoiIjFJgv8PAyCDJwMygyWCZmFxc4BgQ4MOAE3y7BlQNBJd1QWbhVocVcKWkFicD6T9AHJdcUFTCwMAYA2Rzl5cUgNgZQLZIUjaYXQNiFwEdCGRPALHTIewlYDUQ9g6wmpAgZyD7DJDtkI7ETkJiQ+0FAeZkIxJdTQQoSa0oAdFuTgwMoDCFiCLCCiHGLAbExgwMTEsQYvmLGBgsvgLFJyDEkmYyMGxvZWCQuIUQU1nAwMDfwsCw7XxyaVEZ1GopID7NeJI5mXUSRzb3NwF70UBpE8WPmhOMJKwnubEGlse+zS6oYu3cOKtmTeb+2suHXxr8/w8A3kFTfazGM+sAAADAUExURevbK9vPsbKVO2RuaO/p3bFjOsipT6BqVK2VUi17mR0bSlGEiS0iPUt7hkw3O8JXO0EuRzGBmb07LsJqS1mDd7yxjODJQ1dFP829ouC9K/39/KuISy0mTM4zN5B2VbCTU0c4SmxXUFZGTe7n1XhkU/bpKcm3kpeFVCQcSrOZatXIq7mkd7J5S88tNIRrVAp5s7xKODsyS+vYMM+3N8KshcNGN7yrhGRMS+Xbx8xVVcGnem2FcouHZgF6w7hpRcarOtqmQkwAAABAdFJOU//////////////////////////////////////////////////////////////////////////////////////veV7JAAAOa0lEQVR42q1aCXviug5NCFtbusx+Hw7e4iZkIexLCwP//1+9Izth6bSdzr3jjxYIzokiHcmSHK//kRFlizTN8zyO+h8c3kdQY3YcafbXcGPWOOGyQmR/BbeZJxZP0D93gdT/77h+CqDuNvn+OKNxcBfJm/8JN4qtlLurcTD3vEfv8bFxe7X7kJ7fwW3W5gp+jq8ajzRmYvxz7ERuvK9n7x0NtKxeD98bwXgsZoTr7cbjQHgHd73Fv8Fd0JnJdgvAGYC3HuHOg/GtmHmPYmu1kW7+GHdFpk8gaNAAzmFLCsZ78LX76M0a2/F4a9Xh/yHugs5qzMX2FgLO523G2WE+PzCetOdzcTu+2nYP7feAX8fNSLUHEGAudkHS6DaA2W40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";
 
-function normalizeName(value) {
-       var from = "áéíóúüñÁÉÍÓÚÜÑ";
-       var to = "aeiouunAEIOUUN";
-       var s = (value || "").toString().trim().replace(/\s+/g, " ").toLowerCase();
-       var result = "";
-       for (var i = 0; i < s.length; i++) {
-                var idx = from.indexOf(s[i]);
-                result += idx >= 0 ? to[idx] : s[i];
-       }
-       return result;
+const BIMESTRE_LABELS = ["B1", "B2", "B3", "B4"];
+
+function generateId() {
+return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-          function waitForFirebase() {
-                 return new Promise((resolve) => {
-                          if (window.__firebaseReady) return resolve();
-                          window.addEventListener("firebase-ready", () => resolve(), { once: true });
-                 });
-          }
+function normalizeName(value) {
+var from = "áéíóúüñÁÉÍÓÚÜÑ";
+var to = "aeiouunAEIOUUN";
+var s = (value || "").toString().trim().replace(/\s+/g, " ").toLowerCase();
+var result = "";
+for (var i = 0; i < s.length; i++) {
+var idx = from.indexOf(s[i]);
+result += idx >= 0 ? to[idx] : s[i];
+}
+return result;
+}
 
-          function readFileAsDataURL(file) {
-                 return new Promise((resolve, reject) => {
-                          const reader = new FileReader();
-                          reader.onload = () => resolve(reader.result);
-                          reader.onerror = () => reject(reader.error);
-                          reader.readAsDataURL(file);
-                 });
-          }
-          
+function deepClone(obj) {
+return JSON.parse(JSON.stringify(obj));
+}
+
+function toNumber(v) {
+if (v === undefined || v === null) return NaN;
+var s = String(v).trim().replace(",", ".");
+if (s === "") return NaN;
+var n = Number(s);
+return isFinite(n) ? n : NaN;
+}
+
+function averageValid(nums) {
+var valid = nums.filter(function (n) { return !isNaN(n); });
+if (!valid.length) return null;
+var sum = valid.reduce(function (a, b) { return a + b; }, 0);
+return Math.round(sum / valid.length);
+}
+
+function withCriterioValue(buffer, studentId, area, criterio, idx, value) {
+var next = deepClone(buffer || {});
+if (!next[studentId]) next[studentId] = {};
+if (!next[studentId][area]) next[studentId][area] = { criterios: {}, recuperacion: "" };
+if (!next[studentId][area].criterios) next[studentId][area].criterios = {};
+if (!next[studentId][area].criterios[criterio]) next[studentId][area].criterios[criterio] = ["", "", "", ""];
+next[studentId][area].criterios[criterio][idx] = value;
+return next;
+}
+
+function withRecuperacionValue(buffer, studentId, area, value) {
+var next = deepClone(buffer || {});
+if (!next[studentId]) next[studentId] = {};
+if (!next[studentId][area]) next[studentId][area] = { criterios: {}, recuperacion: "" };
+next[studentId][area].recuperacion = value;
+return next;
+}
+
+function withComportamientoValue(buffer, studentId, field, value, idx) {
+var next = deepClone(buffer || {});
+if (!next[studentId]) next[studentId] = { b: ["", "", "", ""], final: "", recuperacion: "" };
+if (field === "b") next[studentId].b[idx] = value;
+else next[studentId][field] = value;
+return next;
+}
+
+function migrateData(loaded) {
+var out = { ...emptyData(), ...loaded };
+if (loaded && Array.isArray(loaded.subjects) && !Array.isArray(loaded.areas)) {
+var migratedGrades = {};
+Object.keys(loaded.grades || {}).forEach(function (studentId) {
+migratedGrades[studentId] = {};
+Object.keys(loaded.grades[studentId] || {}).forEach(function (subj) {
+var val = loaded.grades[studentId][subj];
+migratedGrades[studentId][subj] = { criterios: {}, recuperacion: "" };
+migratedGrades[studentId][subj].criterios[subj] = [val || "", "", "", ""];
+});
+});
+out.areas = loaded.subjects.map(function (s) { return { name: s, criterios: [s] }; });
+out.grades = migratedGrades;
+}
+if (!Array.isArray(out.areas)) out.areas = [];
+if (!out.grades) out.grades = {};
+if (!out.comportamiento) out.comportamiento = {};
+return out;
+}
+
+function waitForFirebase() {
+return new Promise((resolve) => {
+if (window.__firebaseReady) return resolve();
+window.addEventListener("firebase-ready", () => resolve(), { once: true });
+});
+}
+
+function readFileAsDataURL(file) {
+return new Promise((resolve, reject) => {
+const reader = new FileReader();
+reader.onload = () => resolve(reader.result);
+reader.onerror = () => reject(reader.error);
+reader.readAsDataURL(file);
+});
+}
+
 function App() {
-                 const [loading, setLoading] = useState(true);
-                 const [data, setData] = useState(emptyData());
-                 const [error, setError] = useState("");
-                 const [session, setSession] = useState(null);
-                 const [saving, setSaving] = useState(false);
-                 const [files, setFiles] = useState([]);
-                 const [filesLoading, setFilesLoading] = useState(true);
+const [loading, setLoading] = useState(true);
+const [data, setData] = useState(emptyData());
+const [error, setError] = useState("");
+const [session, setSession] = useState(null);
+const [saving, setSaving] = useState(false);
+const [files, setFiles] = useState([]);
+const [filesLoading, setFilesLoading] = useState(true);
 
-            useEffect(() => {
-                     (async () => {
-                                try {
-                                             await waitForFirebase();
-                                             const loaded = await window.__loadData();
-                                             if (loaded) setData({ ...emptyData(), ...loaded });
-                                } catch (e) {
-                                             setError("No se pudo conectar con la base de datos. Revisa la configuración de Firebase.");
-                                } finally {
-                                             setLoading(false);
-                                }
-                     })();
-            }, []);
+useEffect(() => {
+(async () => {
+try {
+await waitForFirebase();
+const loaded = await window.__loadData();
+if (loaded) setData(migrateData(loaded));
+} catch (e) {
+setError("No se pudo conectar con la base de datos. Revisa la configuración de Firebase.");
+} finally {
+setLoading(false);
+}
+})();
+}, []);
 
-            useEffect(() => {
-                     (async () => {
-                                try {
-                                             await waitForFirebase();
-                                             const list = await window.__listFiles();
-                                             setFiles(list);
-                                } catch (e) {
-                                             // si falla la lista de archivos, el resto de la app sigue funcionando
-                                } finally {
-                                             setFilesLoading(false);
-                                }
-                     })();
-            }, []);
+useEffect(() => {
+(async () => {
+try {
+await waitForFirebase();
+const list = await window.__listFiles();
+setFiles(list);
+} catch (e) {
+// si falla la lista de archivos, el resto de la app sigue funcionando
+} finally {
+setFilesLoading(false);
+}
+})();
+}, []);
 
-            async function persist(newData) {
-                     setData(newData);
-                     setSaving(true);
-                     try {
-                                await window.__saveData(newData);
-                                setError("");
-                     } catch (e) {
-                                setError("Error al guardar los datos. Revisa tu conexión o configuración de Firebase.");
-                     } finally {
-                                setSaving(false);
-                     }
-            }
+async function persist(newData) {
+setData(newData);
+setSaving(true);
+try {
+await window.__saveData(newData);
+setError("");
+} catch (e) {
+setError("Error al guardar los datos. Revisa tu conexión o configuración de Firebase.");
+} finally {
+setSaving(false);
+}
+}
 
-            async function refreshFiles() {
-                     try {
-                                const list = await window.__listFiles();
-                                setFiles(list);
-                     } catch (e) {
-                                setError("No se pudo actualizar la lista de archivos.");
-                     }
-            }
+async function refreshFiles() {
+try {
+const list = await window.__listFiles();
+setFiles(list);
+} catch (e) {
+setError("No se pudo actualizar la lista de archivos.");
+}
+}
 
-            async function uploadFile(file, label) {
-                     if (file.size > MAX_FILE_BYTES) {
-                                setError("El archivo \"" + file.name + "\" pesa demasiado (máx. " + Math.round(MAX_FILE_BYTES / 1024) + " KB). Comprímelo e inténtalo de nuevo.");
-                                return false;
-                     }
-                     try {
-                                const dataUrl = await readFileAsDataURL(file);
-                                await window.__uploadFile({
-                                             name: label && label.trim() ? label.trim() : file.name,
-                                             type: file.type || "application/octet-stream",
-                                             dataUrl,
-                                });
-                                setError("");
-                                await refreshFiles();
-                                return true;
-                     } catch (e) {
-                                setError("No se pudo subir el archivo. Intenta con uno más liviano.");
-                                return false;
-                     }
-            }
+async function uploadFile(file, label) {
+if (file.size > MAX_FILE_BYTES) {
+setError("El archivo \"" + file.name + "\" pesa demasiado (máx. " + Math.round(MAX_FILE_BYTES / 1024) + " KB). Comprímelo e inténtalo de nuevo.");
+return false;
+}
+try {
+const dataUrl = await readFileAsDataURL(file);
+await window.__uploadFile({
+name: label && label.trim() ? label.trim() : file.name,
+type: file.type || "application/octet-stream",
+dataUrl,
+});
+setError("");
+await refreshFiles();
+return true;
+} catch (e) {
+setError("No se pudo subir el archivo. Intenta con uno más liviano.");
+return false;
+}
+}
 
-            async function deleteFile(id) {
-                     if (!confirm("¿Eliminar este archivo?")) return;
-                     try {
-                                await window.__deleteFile(id);
-                                await refreshFiles();
-                     } catch (e) {
-                                setError("No se pudo eliminar el archivo.");
-                     }
-            }
+async function deleteFile(id) {
+if (!confirm("¿Eliminar este archivo?")) return;
+try {
+await window.__deleteFile(id);
+await refreshFiles();
+} catch (e) {
+setError("No se pudo eliminar el archivo.");
+}
+}
 
-            if (loading) {
-                     return (
-                                <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                                             <p className="text-slate-500 text-sm">Cargando...</p>
-                                </div>
-                              );
-            }
+if (loading) {
+return (
+<div className="min-h-screen flex items-center justify-center bg-slate-50">
+<p className="text-slate-500 text-sm">Cargando...</p>
+</div>
+);
+}
 
-            if (session && session.role === "teacher") {
-                     return (
-                                <TeacherDashboard
-                                             data={data}
-                                             persist={persist}
-                                             saving={saving}
-                                             error={error}
-                                             files={files}
-                                             filesLoading={filesLoading}
-                                             onUploadFile={uploadFile}
-                                             onDeleteFile={deleteFile}
-                                             onLogout={() => setSession(null)}
-                                           />
-                              );
-            }
+if (session && session.role === "teacher") {
+return (
+<TeacherDashboard
+data={data}
+persist={persist}
+saving={saving}
+error={error}
+files={files}
+filesLoading={filesLoading}
+onUploadFile={uploadFile}
+onDeleteFile={deleteFile}
+onLogout={() => setSession(null)}
+/>
+);
+}
 
-            return (
-                     <HomeScreen
-                                data={data}
-                                files={files}
-                                onSetTeacherPassword={async (pwd) => {
-                                             await persist({ ...data, teacherPassword: pwd });
-                                             setSession({ role: "teacher" });
-                                }}
-                                onLogin={() => setSession({ role: "teacher" })}
-                                error={error}
-                              />
-                   );
-          }
+return (
+<HomeScreen
+data={data}
+files={files}
+onSetTeacherPassword={async (pwd) => {
+await persist({ ...data, teacherPassword: pwd });
+setSession({ role: "teacher" });
+}}
+onLogin={() => setSession({ role: "teacher" })}
+error={error}
+/>
+);
+}
 
-          function HomeScreen({ data, files, onSetTeacherPassword, onLogin, error }) {
-                 const [tab, setTab] = useState("parent");
+function HomeScreen({ data, files, onSetTeacherPassword, onLogin, error }) {
+const [tab, setTab] = useState("parent");
 
-            return (
-                     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-                                <div className="w-full max-w-md">
-                                             <div className="text-center mb-6">
-                                                            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-600 text-white mb-3 text-2xl">🎓</div>
-                                                            <h1 className="text-xl font-semibold text-slate-800">Portal de Notas</h1>
-                                                            <p className="text-sm text-slate-500 mt-1">Consulta de calificaciones</p>
-                                             </div>
+return (
+<div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+<div className="w-full max-w-md">
+<div className="text-center mb-6">
+<img src={SCHOOL_SHIELD_DATA_URL} alt="Escudo del colegio" className="inline-block w-14 h-14 mb-3 object-contain" />
+<h1 className="text-xl font-semibold text-slate-800">Portal de Notas</h1>
+<p className="text-sm text-slate-500 mt-1">Consulta de calificaciones</p>
+</div>
 
-                                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                                                            <div className="flex rounded-lg bg-slate-100 p-1 mb-5">
-                                                                             <button type="button" onClick={() => setTab("parent")}
-                                                                                                className={`flex-1 text-sm font-medium py-2 rounded-md transition ${tab === "parent" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>
-                                                                                                Padres
-                                                                             </button>
-                                                                             <button type="button" onClick={() => setTab("teacher")}
-                                                                                                className={`flex-1 text-sm font-medium py-2 rounded-md transition ${tab === "teacher" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>
-                                                                                                Profesora
-                                                                             </button>
-                                                            </div>
+<div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+<div className="flex rounded-lg bg-slate-100 p-1 mb-5">
+<button type="button" onClick={() => setTab("parent")}
+className={`flex-1 text-sm font-medium py-2 rounded-md transition ${tab === "parent" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>
+Padres
+</button>
+<button type="button" onClick={() => setTab("teacher")}
+className={`flex-1 text-sm font-medium py-2 rounded-md transition ${tab === "teacher" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>
+Docente
+</button>
+</div>
 
-                                                  {tab === "parent" ? (
-                                      <ParentSearch students={data.students} subjects={data.subjects} grades={data.grades} />
-                                    ) : (
-                                      <TeacherLogin data={data} onSetTeacherPassword={onSetTeacherPassword} onLogin={onLogin} error={error} />
-                                    )}
-                                             </div>
+{tab === "parent" ? (
+<ParentSearch students={data.students} areas={data.areas} grades={data.grades} comportamiento={data.comportamiento} />
+) : (
+<TeacherLogin data={data} onSetTeacherPassword={onSetTeacherPassword} onLogin={onLogin} error={error} />
+)}
+</div>
 
-                                     {tab === "parent" && <ClassFiles files={files} />}
-                                </div>
-                     </div>
-                   );
-          }
+{tab === "parent" && <ClassFiles files={files} />}
+</div>
+</div>
+);
+}
 
-          function TeacherLogin({ data, onSetTeacherPassword, onLogin, error }) {
-                 const [password, setPassword] = useState("");
-                 const [password2, setPassword2] = useState("");
-                 const [loginError, setLoginError] = useState("");
-                 const needsTeacherSetup = data.teacherPassword === null;
+function TeacherLogin({ data, onSetTeacherPassword, onLogin, error }) {
+const [password, setPassword] = useState("");
+const [password2, setPassword2] = useState("");
+const [loginError, setLoginError] = useState("");
+const needsTeacherSetup = data.teacherPassword === null;
 
-            function handleSubmit(e) {
-                     e.preventDefault();
-                     setLoginError("");
-                     if (needsTeacherSetup) {
-                                if (password.length < 4) return setLoginError("La contraseña debe tener al menos 4 caracteres.");
-                                if (password !== password2) return setLoginError("Las contraseñas no coinciden.");
-                                onSetTeacherPassword(password);
-                                return;
-                     }
-                     if (password === data.teacherPassword) onLogin();
-                     else setLoginError("Contraseña incorrecta.");
-            }
+function handleSubmit(e) {
+e.preventDefault();
+setLoginError("");
+if (needsTeacherSetup) {
+if (password.length < 4) return setLoginError("La contraseña debe tener al menos 4 caracteres.");
+if (password !== password2) return setLoginError("Las contraseñas no coinciden.");
+onSetTeacherPassword(password);
+return;
+}
+if (password === data.teacherPassword) onLogin();
+else setLoginError("Contraseña incorrecta.");
+}
 
-            return (
-                     <form onSubmit={handleSubmit} className="space-y-3">
-                          {needsTeacherSetup && (
-                                  <p className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-3 py-2">
-                                                 Primera vez: crea una contraseña para la cuenta de profesora.
-                                  </p>
-                                )}
-                                <div>
-                                             <label className="block text-xs font-medium text-slate-600 mb-1">
-                                                  {needsTeacherSetup ? "Nueva contraseña" : "Contraseña"}
-                                             </label>
-                                             <input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                                            value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" />
-                                </div>
-                          {needsTeacherSetup && (
-                                  <div>
-                                                 <label className="block text-xs font-medium text-slate-600 mb-1">Confirmar contraseña</label>
-                                                 <input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                                                  value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="••••••••" />
-                                  </div>
-                                )}
-                          {loginError && <p className="text-xs text-red-600">{loginError}</p>}
-                          {error && <p className="text-xs text-red-600">{error}</p>}
-                                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-lg transition">
-                                     {needsTeacherSetup ? "Crear contraseña y entrar" : "Iniciar sesión"}
-                                </button>
-                     </form>
-                   );
-          }
+return (
+<form onSubmit={handleSubmit} className="space-y-3">
+{needsTeacherSetup && (
+<p className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-3 py-2">
+Primera vez: crea una contraseña para la cuenta de docente.
+</p>
+)}
+<div>
+<label className="block text-xs font-medium text-slate-600 mb-1">
+{needsTeacherSetup ? "Nueva contraseña" : "Contraseña"}
+</label>
+<input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" />
+</div>
+{needsTeacherSetup && (
+<div>
+<label className="block text-xs font-medium text-slate-600 mb-1">Confirmar contraseña</label>
+<input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="••••••••" />
+</div>
+)}
+{loginError && <p className="text-xs text-red-600">{loginError}</p>}
+{error && <p className="text-xs text-red-600">{error}</p>}
+<button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-lg transition">
+{needsTeacherSetup ? "Crear contraseña y entrar" : "Iniciar sesión"}
+</button>
+</form>
+);
+}
 
-          function ParentSearch({ students, subjects, grades }) {
-                 const [query, setQuery] = useState("");
-                 const [result, setResult] = useState(undefined);
+function LibretaTable({ areas, student, gradesBuffer, comportamientoBuffer, editable, onUpdateCriterio, onUpdateRecuperacion, onUpdateComportamiento }) {
+const studentGrades = (gradesBuffer && gradesBuffer[student.id]) || {};
+const studentComportamiento = (comportamientoBuffer && comportamientoBuffer[student.id]) || { b: ["", "", "", ""], final: "", recuperacion: "" };
 
-            function handleSearch(e) {
-                     e.preventDefault();
-                     const norm = normalizeName(query);
-                     if (!norm) { setResult(null); return; }
-                     const match = students.find((s) => normalizeName(s.name) === norm);
-                     setResult(match || null);
-            }
+function renderValue(v) {
+return v && String(v).trim() !== "" ? v : "—";
+}
 
-            return (
-                     <div>
-                                <p className="text-xs text-slate-500 mb-3">
-                                             Escribe el nombre y apellidos completos de tu hijo/a, tal como están registrados, para ver sus notas.
-                                </p>
-                                <form onSubmit={handleSearch} className="flex gap-2 mb-4">
-                                             <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                                            value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nombre y apellidos completos" />
-                                             <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Buscar</button>
-                                </form>
+return (
+<div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+<table className="min-w-full text-sm border-collapse">
+<thead>
+<tr className="bg-slate-50 text-slate-500 text-xs uppercase">
+<th className="px-3 py-2 text-left border border-slate-200">Área</th>
+<th className="px-3 py-2 text-left border border-slate-200">Criterios de evaluación</th>
+<th className="px-2 py-2 text-center border border-slate-200">1</th>
+<th className="px-2 py-2 text-center border border-slate-200">2</th>
+<th className="px-2 py-2 text-center border border-slate-200">3</th>
+<th className="px-2 py-2 text-center border border-slate-200">4</th>
+<th className="px-3 py-2 text-center border border-slate-200">Calific. Final del Área</th>
+<th className="px-3 py-2 text-center border border-slate-200">Eval. de Recuperación</th>
+</tr>
+</thead>
+<tbody>
+{(!areas || areas.length === 0) && (
+<tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 border border-slate-200">Aún no hay áreas registradas.</td></tr>
+)}
+{areas.map((area) => {
+const criterios = area.criterios || [];
+const rowSpan = Math.max(criterios.length, 1) + 1;
+const areaData = studentGrades[area.name] || { criterios: {}, recuperacion: "" };
+const bimestrePromedios = [0, 1, 2, 3].map((bIdx) => {
+const vals = criterios.map((c) => toNumber(((areaData.criterios || {})[c] || [])[bIdx]));
+return averageValid(vals);
+});
+const finalArea = averageValid(bimestrePromedios.filter((v) => v !== null));
+const recuperacion = areaData.recuperacion || "";
 
-                          {result === null && (
-                                  <p className="text-xs bg-red-50 text-red-600 border border-red-200 rounded-lg px-3 py-2">
-                                                 No se encontró ningún alumno con ese nombre exacto. Verifica que esté completo y bien escrito.
-                                  </p>
-                                )}
+return (
+<React.Fragment key={area.name}>
+{criterios.length === 0 ? (
+<tr>
+<td className="px-3 py-2 border border-slate-200 font-medium text-slate-700 align-top">{area.name}</td>
+<td className="px-3 py-2 border border-slate-200 text-slate-400 italic" colSpan={4}>Sin criterios definidos</td>
+<td className="px-3 py-2 border border-slate-200 text-center">—</td>
+<td className="px-2 py-1 border border-slate-200 text-center">
+{editable ? (
+<input className="w-20 text-center border border-slate-200 rounded px-1 py-1 text-sm" value={recuperacion}
+onChange={(e) => onUpdateRecuperacion(student.id, area.name, e.target.value)} placeholder="-" />
+) : renderValue(recuperacion)}
+</td>
+</tr>
+) : (
+<React.Fragment>
+{criterios.map((crit, ci) => {
+const values = (areaData.criterios || {})[crit] || ["", "", "", ""];
+return (
+<tr key={crit}>
+{ci === 0 && (
+<td className="px-3 py-2 border border-slate-200 font-medium text-slate-700 align-top" rowSpan={rowSpan}>{area.name}</td>
+)}
+<td className="px-3 py-2 border border-slate-200 text-slate-600">{crit}</td>
+{[0, 1, 2, 3].map((bIdx) => (
+<td key={bIdx} className="px-1 py-1 border border-slate-200 text-center">
+{editable ? (
+<input className="w-12 text-center border border-slate-200 rounded px-1 py-1 text-sm" value={values[bIdx] || ""}
+onChange={(e) => onUpdateCriterio(student.id, area.name, crit, bIdx, e.target.value)} placeholder="-" />
+) : renderValue(values[bIdx])}
+</td>
+))}
+{ci === 0 && (
+<React.Fragment>
+<td className="px-3 py-2 border border-slate-200 text-center font-semibold text-indigo-700 align-top" rowSpan={rowSpan}>
+{finalArea === null ? "—" : finalArea}
+</td>
+<td className="px-2 py-1 border border-slate-200 text-center align-top" rowSpan={rowSpan}>
+{editable ? (
+<input className="w-20 text-center border border-slate-200 rounded px-1 py-1 text-sm" value={recuperacion}
+onChange={(e) => onUpdateRecuperacion(student.id, area.name, e.target.value)} placeholder="-" />
+) : renderValue(recuperacion)}
+</td>
+</React.Fragment>
+)}
+</tr>
+);
+})}
+<tr className="bg-slate-50">
+<td className="px-3 py-2 border border-slate-200 text-xs font-semibold text-slate-600" colSpan={2}>CALIF. PROMEDIO ÁREA</td>
+{[0, 1, 2, 3].map((bIdx) => (
+<td key={bIdx} className="px-2 py-2 border border-slate-200 text-center text-xs font-semibold text-slate-700">
+{bimestrePromedios[bIdx] === null ? "—" : bimestrePromedios[bIdx]}
+</td>
+))}
+</tr>
+</React.Fragment>
+)}
+</React.Fragment>
+);
+})}
+<tr className="bg-amber-50">
+<td className="px-3 py-2 border border-slate-200 font-medium text-slate-700" colSpan={2}>COMPORTAMIENTO</td>
+{[0, 1, 2, 3].map((bIdx) => (
+<td key={bIdx} className="px-1 py-1 border border-slate-200 text-center">
+{editable ? (
+<input className="w-12 text-center border border-slate-200 rounded px-1 py-1 text-sm" value={(studentComportamiento.b || [])[bIdx] || ""}
+onChange={(e) => onUpdateComportamiento(student.id, "b", e.target.value, bIdx)} placeholder="-" />
+) : renderValue((studentComportamiento.b || [])[bIdx])}
+</td>
+))}
+<td className="px-2 py-1 border border-slate-200 text-center">
+{editable ? (
+<input className="w-20 text-center border border-slate-200 rounded px-1 py-1 text-sm" value={studentComportamiento.final || ""}
+onChange={(e) => onUpdateComportamiento(student.id, "final", e.target.value)} placeholder="-" />
+) : renderValue(studentComportamiento.final)}
+</td>
+<td className="px-2 py-1 border border-slate-200 text-center">
+{editable ? (
+<input className="w-20 text-center border border-slate-200 rounded px-1 py-1 text-sm" value={studentComportamiento.recuperacion || ""}
+onChange={(e) => onUpdateComportamiento(student.id, "recuperacion", e.target.value)} placeholder="-" />
+) : renderValue(studentComportamiento.recuperacion)}
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+);
+}
 
-                          {result && (
-                                  <div>
-                                                 <p className="text-sm font-medium text-slate-700 mb-2">{result.name}</p>
-                                       {subjects.length === 0 ? (
-                                                   <p className="text-sm text-slate-400 bg-slate-50 border border-slate-200 rounded-xl px-4 py-6 text-center">Aún no hay materias registradas.</p>
-                                                 ) : (
-                                                   <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
-                                                        {subjects.map((subj, i) => {
-                                                                        const g = (grades[result.id] || {})[subj];
-                                                                        return (
-                                                                                               <div key={subj} className={`flex items-center justify-between px-4 py-3 ${i !== 0 ? "border-t border-slate-100" : ""}`}>
-                                                                                                                        <span className="text-sm text-slate-700">{subj}</span>
-                                                                                                                        <span className="text-sm font-semibold text-indigo-700">{g !== undefined && g !== "" ? g : "—"}</span>
-                                                                                                    </div>
-                                                                                             );
-                                                   })}
-                                                   </div>
-                                                 )}
-                                  </div>
-                                )}
-                     </div>
-                   );
-          }
+function ParentSearch({ students, areas, grades, comportamiento }) {
+const [query, setQuery] = useState("");
+const [result, setResult] = useState(undefined);
 
-          function ClassFiles({ files }) {
-                 if (!files || files.length === 0) return null;
-                 return (
-                          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 mt-4">
-                                     <p className="text-sm font-medium text-slate-700 mb-2">Documentos de la profesora</p>
-                                     <ul className="space-y-1">
-                                          {files.map((f) => (
-                                         <li key={f.id}>
-                                                          <a href={f.dataUrl} download={f.name} className="text-sm text-indigo-700 hover:underline">{f.name}</a>
-                                         </li>
-                                       ))}
-                                     </ul>
-                          </div>
-                        );
-          }
+function handleSearch(e) {
+e.preventDefault();
+const norm = normalizeName(query);
+if (!norm) { setResult(null); return; }
+const match = students.find((s) => normalizeName(s.name) === norm);
+setResult(match || null);
+}
 
-          function ChangePassword({ data, persist }) {
-               const [open, setOpen] = useState(false);
-               const [current, setCurrent] = useState("");
-               const [next, setNext] = useState("");
-               const [next2, setNext2] = useState("");
-               const [msg, setMsg] = useState("");
-               const [msgType, setMsgType] = useState("");
-               const [saving, setSaving] = useState(false);
-               
-               async function handleSubmit(e) {
-                    e.preventDefault();
-                    setMsg("");
-                    if (current !== data.teacherPassword) { setMsg("La contrasena actual no es correcta."); setMsgType("error"); return; }
-                    if (next.length < 4) { setMsg("La nueva contrasena debe tener al menos 4 caracteres."); setMsgType("error"); return; }
-                    if (next !== next2) { setMsg("Las contrasenas nuevas no coinciden."); setMsgType("error"); return; }
-                    setSaving(true);
-                    await persist({ ...data, teacherPassword: next });
-                    setSaving(false);
-                    setCurrent("");
-                    setNext("");
-                    setNext2("");
-                    setMsg("Contrasena actualizada correctamente.");
-                    setMsgType("success");
-               }
-               
-               return (
-                    <div>
-                         <button type="button" onClick={() => { setOpen((v) => !v); setMsg(""); }} className="text-xs font-medium text-slate-500 hover:text-indigo-600 transition">
-                              Cambiar contrasena
-                         </button>
-                         {open && (
-                         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-30 p-4" onClick={() => setOpen(false)}>
-                              <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()} className="bg-white border border-slate-200 rounded-xl shadow-lg p-5 w-full max-w-sm space-y-3">
-                                   <div className="flex items-center justify-between">
-                                        <p className="text-sm font-medium text-slate-700">Cambiar contrasena</p>
-                                        <button type="button" onClick={() => setOpen(false)} className="text-slate-400">X</button>
-                                   </div>
-                                   <div>
-                                        <label className="block text-xs font-medium text-slate-600 mb-1">Contrasena actual</label>
-                                        <input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value={current} onChange={(e) => setCurrent(e.target.value)} autoFocus />
-                                   </div>
-                                   <div>
-                                        <label className="block text-xs font-medium text-slate-600 mb-1">Nueva contrasena</label>
-                                        <input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value={next} onChange={(e) => setNext(e.target.value)} />
-                                   </div>
-                                   <div>
-                                        <label className="block text-xs font-medium text-slate-600 mb-1">Confirmar nueva contrasena</label>
-                                        <input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value={next2} onChange={(e) => setNext2(e.target.value)} />
-                                   </div>
-                                   {msg && <p className={msgType === "error" ? "text-xs text-red-600" : "text-xs text-emerald-600"}>{msg}</p>}
-                                   <button type="submit" disabled={saving} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-lg transition disabled:opacity-50">
-                                        {saving ? "Guardando..." : "Actualizar contrasena"}
-                                   </button>
-                              </form>
-                         </div>
-                         )}
-                    </div>
-                    );
-          }
-          
-          function TeacherDashboard({ data, persist, saving, error, files, filesLoading, onUploadFile, onDeleteFile, onLogout }) {
-                 const [tab, setTab] = useState("grades");
-                 const [search, setSearch] = useState("");
-                 const [gradesBuffer, setGradesBuffer] = useState(data.grades);
-                 const [dirty, setDirty] = useState(false);
+return (
+<div>
+<p className="text-xs text-slate-500 mb-3">
+Escribe el nombre y apellidos completos de tu hijo/a, tal como están registrados, para ver sus notas.
+</p>
+<form onSubmit={handleSearch} className="flex gap-2 mb-4">
+<input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nombre y apellidos completos" />
+<button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Buscar</button>
+</form>
 
-            useEffect(() => { setGradesBuffer(data.grades); setDirty(false); }, [data.grades]);
+{result === null && (
+<p className="text-xs bg-red-50 text-red-600 border border-red-200 rounded-lg px-3 py-2">
+No se encontró ningún alumno con ese nombre exacto. Verifica que esté completo y bien escrito.
+</p>
+)}
 
-            const filteredStudents = useMemo(() => {
-                     const q = search.trim().toLowerCase();
-                     if (!q) return data.students;
-                     return data.students.filter((s) => s.name.toLowerCase().includes(q));
-            }, [data.students, search]);
+{result && (
+<div>
+<p className="text-sm font-medium text-slate-700 mb-2">{result.name}</p>
+<LibretaTable areas={areas} student={result} gradesBuffer={grades} comportamientoBuffer={comportamiento} editable={false} />
+</div>
+)}
+</div>
+);
+}
 
-            function updateGrade(studentId, subject, value) {
-                     setGradesBuffer((prev) => ({ ...prev, [studentId]: { ...(prev[studentId] || {}), [subject]: value } }));
-                     setDirty(true);
-            }
+function ClassFiles({ files }) {
+if (!files || files.length === 0) return null;
+return (
+<div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 mt-4">
+<p className="text-sm font-medium text-slate-700 mb-2">Documentos del docente</p>
+<ul className="space-y-1">
+{files.map((f) => (
+<li key={f.id}>
+<a href={f.dataUrl} download={f.name} className="text-sm text-indigo-700 hover:underline">{f.name}</a>
+</li>
+))}
+</ul>
+</div>
+);
+}
 
-            async function saveGrades() { await persist({ ...data, grades: gradesBuffer }); setDirty(false); }
+function ChangePassword({ data, persist }) {
+const [open, setOpen] = useState(false);
+const [current, setCurrent] = useState("");
+const [next, setNext] = useState("");
+const [next2, setNext2] = useState("");
+const [msg, setMsg] = useState("");
+const [msgType, setMsgType] = useState("");
+const [saving, setSaving] = useState(false);
 
-            async function addSubject(name) {
-                     const clean = name.trim();
-                     if (!clean || data.subjects.includes(clean)) return;
-                     await persist({ ...data, subjects: [...data.subjects, clean] });
-            }
+async function handleSubmit(e) {
+e.preventDefault();
+setMsg("");
+if (current !== data.teacherPassword) { setMsg("La contrasena actual no es correcta."); setMsgType("error"); return; }
+if (next.length < 4) { setMsg("La nueva contrasena debe tener al menos 4 caracteres."); setMsgType("error"); return; }
+if (next !== next2) { setMsg("Las contrasenas nuevas no coinciden."); setMsgType("error"); return; }
+setSaving(true);
+await persist({ ...data, teacherPassword: next });
+setSaving(false);
+setCurrent("");
+setNext("");
+setNext2("");
+setMsg("Contrasena actualizada correctamente.");
+setMsgType("success");
+}
 
-            async function removeSubject(name) {
-                     if (!confirm("¿Eliminar la materia \"" + name + "\"? Se borrarán sus notas.")) return;
-                     const newGrades = { ...data.grades };
-                     Object.keys(newGrades).forEach((id) => { if (newGrades[id]) delete newGrades[id][name]; });
-                     await persist({ ...data, subjects: data.subjects.filter((s) => s !== name), grades: newGrades });
-            }
+return (
+<div>
+<button type="button" onClick={() => { setOpen((v) => !v); setMsg(""); }} className="text-xs font-medium text-slate-500 hover:text-indigo-600 transition">
+Cambiar contrasena
+</button>
+{open && (
+<div className="fixed inset-0 bg-black/30 flex items-center justify-center z-30 p-4" onClick={() => setOpen(false)}>
+<form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()} className="bg-white border border-slate-200 rounded-xl shadow-lg p-5 w-full max-w-sm space-y-3">
+<div className="flex items-center justify-between">
+<p className="text-sm font-medium text-slate-700">Cambiar contrasena</p>
+<button type="button" onClick={() => setOpen(false)} className="text-slate-400">X</button>
+</div>
+<div>
+<label className="block text-xs font-medium text-slate-600 mb-1">Contrasena actual</label>
+<input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value={current} onChange={(e) => setCurrent(e.target.value)} autoFocus />
+</div>
+<div>
+<label className="block text-xs font-medium text-slate-600 mb-1">Nueva contrasena</label>
+<input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value={next} onChange={(e) => setNext(e.target.value)} />
+</div>
+<div>
+<label className="block text-xs font-medium text-slate-600 mb-1">Confirmar nueva contrasena</label>
+<input type="password" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value={next2} onChange={(e) => setNext2(e.target.value)} />
+</div>
+{msg && <p className={msgType === "error" ? "text-xs text-red-600" : "text-xs text-emerald-600"}>{msg}</p>}
+<button type="submit" disabled={saving} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-lg transition disabled:opacity-50">
+{saving ? "Guardando..." : "Actualizar contrasena"}
+</button>
+</form>
+</div>
+)}
+</div>
+);
+}
 
-            async function addStudent(name) {
-                     const clean = name.trim();
-                     if (!clean) return false;
-                     if (data.students.some((s) => normalizeName(s.name) === normalizeName(clean))) {
-                                alert("Ya existe un alumno con ese nombre.");
-                                return false;
-                     }
-                     await persist({ ...data, students: [...data.students, { id: generateId(), name: clean }] });
-                     return true;
-            }
+function TeacherDashboard({ data, persist, saving, error, files, filesLoading, onUploadFile, onDeleteFile, onLogout }) {
+const [tab, setTab] = useState("grades");
+const [search, setSearch] = useState("");
+const [gradesBuffer, setGradesBuffer] = useState(data.grades);
+const [comportamientoBuffer, setComportamientoBuffer] = useState(data.comportamiento || {});
+const [dirty, setDirty] = useState(false);
 
-            async function removeStudent(id) {
-                     if (!confirm("¿Eliminar a este alumno y sus notas?")) return;
-                     const newGrades = { ...data.grades };
-                     delete newGrades[id];
-                     await persist({ ...data, students: data.students.filter((s) => s.id !== id), grades: newGrades });
-            }
+useEffect(() => {
+setGradesBuffer(data.grades);
+setComportamientoBuffer(data.comportamiento || {});
+setDirty(false);
+}, [data.grades, data.comportamiento]);
 
-            async function applyImport(imported) {
-                     await persist(imported);
-            }
+const filteredStudents = useMemo(() => {
+const q = search.trim().toLowerCase();
+if (!q) return data.students;
+return data.students.filter((s) => s.name.toLowerCase().includes(q));
+}, [data.students, search]);
 
-            return (
-                     <div className="min-h-screen bg-slate-50">
-                                <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-                                             <div className="flex items-center gap-2">
-                                                            <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center">🎓</div>
-                                                            <div>
-                                                                             <p className="text-sm font-semibold text-slate-800">Panel de la profesora</p>
-                                                                             <p className="text-xs text-slate-400">{data.students.length} alumnos · {data.subjects.length} materias</p>
-                                                            </div>
-                                             </div>
-                                             <div className="flex items-center gap-3"><ChangePassword data={data} persist={persist} /><button onClick={onLogout} className="text-xs font-medium text-slate-500 hover:text-red-600 transition">Salir</button></div>
-                                </header>
+function updateCriterio(studentId, area, criterio, idx, value) {
+setGradesBuffer((prev) => withCriterioValue(prev, studentId, area, criterio, idx, value));
+setDirty(true);
+}
 
-                                <div className="px-4 pt-4">
-                                             <div className="flex rounded-lg bg-slate-100 p-1 max-w-md">
-                                                            <button onClick={() => setTab("grades")} className={`flex-1 text-xs font-medium py-2 rounded-md transition ${tab === "grades" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>Notas</button>
-                                                            <button onClick={() => setTab("students")} className={`flex-1 text-xs font-medium py-2 rounded-md transition ${tab === "students" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>Alumnos</button>
-                                                            <button onClick={() => setTab("files")} className={`flex-1 text-xs font-medium py-2 rounded-md transition ${tab === "files" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>Archivos</button>
-                                             </div>
-                                </div>
+function updateRecuperacion(studentId, area, value) {
+setGradesBuffer((prev) => withRecuperacionValue(prev, studentId, area, value));
+setDirty(true);
+}
 
-                          {error && <div className="mx-4 mt-3 text-xs bg-red-50 text-red-600 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+function updateComportamiento(studentId, field, value, idx) {
+setComportamientoBuffer((prev) => withComportamientoValue(prev, studentId, field, value, idx));
+setDirty(true);
+}
 
-                                <main className="p-4">
-                                     {tab === "students" && (
-                                    <StudentsTab students={data.students} search={search} setSearch={setSearch} filteredStudents={filteredStudents} onAdd={addStudent} onRemove={removeStudent} />
-                                  )}
-                                     {tab === "grades" && (
-                                    <GradesTab data={data} students={filteredStudents} search={search} setSearch={setSearch}
-                                                     gradesBuffer={gradesBuffer} updateGrade={updateGrade} addSubject={addSubject} removeSubject={removeSubject}
-                                                     dirty={dirty} saving={saving} onSave={saveGrades} onApplyImport={applyImport} />
-                                  )}
-                                     {tab === "files" && (
-                                    <FilesTab files={files} filesLoading={filesLoading} onUpload={onUploadFile} onDelete={onDeleteFile} />
-                                  )}
-                                </main>
-                     </div>
-                   );
-          }
+async function saveGrades() {
+await persist({ ...data, grades: gradesBuffer, comportamiento: comportamientoBuffer });
+setDirty(false);
+}
 
-          function StudentsTab({ students, search, setSearch, filteredStudents, onAdd, onRemove }) {
-                 const [showForm, setShowForm] = useState(false);
-                 const [name, setName] = useState("");
-                 const [formError, setFormError] = useState("");
+async function addArea(name) {
+const clean = (name || "").trim();
+if (!clean || data.areas.some((a) => a.name === clean)) return;
+await persist({ ...data, areas: [...data.areas, { name: clean, criterios: [] }] });
+}
 
-            async function handleAdd(e) {
-                     e.preventDefault();
-                     setFormError("");
-                     if (!name.trim()) return setFormError("Escribe el nombre completo del alumno.");
-                     const ok = await onAdd(name);
-                     if (ok !== false) { setName(""); setShowForm(false); }
-            }
+async function removeArea(name) {
+if (!confirm("¿Eliminar el área \"" + name + "\"? Se borrarán sus notas.")) return;
+const newGrades = deepClone(data.grades);
+Object.keys(newGrades).forEach((id) => { if (newGrades[id]) delete newGrades[id][name]; });
+await persist({ ...data, areas: data.areas.filter((a) => a.name !== name), grades: newGrades });
+}
 
-            return (
-                     <div>
-                                <div className="flex gap-2 mb-4">
-                                             <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Buscar alumno..." value={search} onChange={(e) => setSearch(e.target.value)} />
-                                             <button onClick={() => setShowForm((v) => !v)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-3 py-2 rounded-lg transition">+ Alumno</button>
-                                </div>
+async function addCriterio(areaName, criterioName) {
+const clean = (criterioName || "").trim();
+if (!clean) return;
+const area = data.areas.find((a) => a.name === areaName);
+if (!area) return;
+if ((area.criterios || []).includes(clean)) return;
+const newAreas = data.areas.map((a) => a.name === areaName ? { ...a, criterios: [...(a.criterios || []), clean] } : a);
+await persist({ ...data, areas: newAreas });
+}
 
-                          {showForm && (
-                                  <form onSubmit={handleAdd} className="bg-white border border-slate-200 rounded-xl p-4 mb-4 space-y-3">
-                                                 <div className="flex items-center justify-between">
-                                                                  <p className="text-sm font-medium text-slate-700">Nuevo alumno</p>
-                                                                  <button type="button" onClick={() => setShowForm(false)} className="text-slate-400">✕</button>
-                                                 </div>
-                                                 <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Nombre y apellidos completos" value={name} onChange={(e) => setName(e.target.value)} />
-                                       {formError && <p className="text-xs text-red-600">{formError}</p>}
-                                                 <button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Guardar alumno</button>
-                                  </form>
-                                )}
+async function removeCriterio(areaName, criterioName) {
+if (!confirm("¿Eliminar el criterio \"" + criterioName + "\"? Se borrarán sus notas.")) return;
+const newAreas = data.areas.map((a) => a.name === areaName ? { ...a, criterios: (a.criterios || []).filter((c) => c !== criterioName) } : a);
+const newGrades = deepClone(data.grades);
+Object.keys(newGrades).forEach((id) => {
+if (newGrades[id] && newGrades[id][areaName] && newGrades[id][areaName].criterios) {
+delete newGrades[id][areaName].criterios[criterioName];
+}
+});
+await persist({ ...data, areas: newAreas, grades: newGrades });
+}
 
-                                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                                             <table className="w-full text-sm">
-                                                            <thead><tr className="bg-slate-50 text-slate-500 text-xs uppercase text-left"><th className="px-4 py-2">Nombre completo</th><th className="px-4 py-2 w-10"></th></tr></thead>
-                                                            <tbody>
-                                                                 {filteredStudents.length === 0 && (
-                                        <tr><td colSpan={2} className="px-4 py-6 text-center text-slate-400 text-sm">{students.length === 0 ? "Aún no has agregado alumnos." : "Sin resultados."}</td></tr>
-                                      )}
-                                                                 {filteredStudents.map((s) => (
-                                        <tr key={s.id} className="border-t border-slate-100">
-                                                             <td className="px-4 py-2 text-slate-700">{s.name}</td>
-                                                             <td className="px-4 py-2 text-right"><button onClick={() => onRemove(s.id)} className="text-slate-400 hover:text-red-600">🗑</button></td>
-                                        </tr>
-                                      ))}
-                                                            </tbody>
-                                             </table>
-                                </div>
-                     </div>
-                   );
-          }
+async function addStudent(name) {
+const clean = name.trim();
+if (!clean) return false;
+if (data.students.some((s) => normalizeName(s.name) === normalizeName(clean))) {
+alert("Ya existe un alumno con ese nombre.");
+return false;
+}
+await persist({ ...data, students: [...data.students, { id: generateId(), name: clean }] });
+return true;
+}
 
-          function GradesTab({ data, students, search, setSearch, gradesBuffer, updateGrade, addSubject, removeSubject, dirty, saving, onSave, onApplyImport }) {
-                 const [newSubject, setNewSubject] = useState("");
-                 const [importPreview, setImportPreview] = useState(null);
-                 const [importError, setImportError] = useState("");
-                 const fileInputRef = React.useRef(null);
+async function removeStudent(id) {
+if (!confirm("¿Eliminar a este alumno y sus notas?")) return;
+const newGrades = { ...data.grades };
+delete newGrades[id];
+const newComportamiento = { ...(data.comportamiento || {}) };
+delete newComportamiento[id];
+await persist({ ...data, students: data.students.filter((s) => s.id !== id), grades: newGrades, comportamiento: newComportamiento });
+}
 
-            function handleFileChange(e) {
-                     const file = e.target.files && e.target.files[0];
-                     e.target.value = "";
-                     if (!file) return;
-                     setImportError("");
-                     const reader = new FileReader();
-                     reader.onload = (evt) => {
-                                try {
-                                             const wb = XLSX.read(evt.target.result, { type: "array" });
-                                             const sheet = wb.Sheets[wb.SheetNames[0]];
-                                             const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-                                             if (!rows.length) throw new Error("empty");
-                                             const header = rows[0];
-                                             const subjectsFromFile = header.slice(1).map((h) => String(h).trim()).filter(Boolean);
-                                             const dataRows = rows.slice(1).filter((r) => r[0] && String(r[0]).trim());
-                                             if (!subjectsFromFile.length || !dataRows.length) {
-                                                            setImportError("No se detectaron materias o alumnos. La primera fila debe tener el nombre de las materias y la primera columna el nombre de cada alumno.");
-                                                            return;
-                                             }
-                                             setImportPreview({ subjectsFromFile, dataRows });
-                                } catch (err) {
-                                             setImportError("No se pudo leer el archivo. Sube un Excel (.xlsx) o CSV válido.");
-                                }
-                     };
-                     reader.readAsArrayBuffer(file);
-            }
+async function applyImport(imported) {
+await persist(imported);
+}
 
-            function confirmImport() {
-                     if (!importPreview) return;
-                     const subjectsFromFile = importPreview.subjectsFromFile;
-                     const dataRows = importPreview.dataRows;
-                     const students2 = data.students.slice();
-                     const subjects2 = data.subjects.slice();
-                     const grades2 = { ...data.grades };
-                     subjectsFromFile.forEach((sub) => { if (subjects2.indexOf(sub) === -1) subjects2.push(sub); });
-                     dataRows.forEach((row) => {
-                                const name = String(row[0]).trim();
-                                let student = students2.find((s) => normalizeName(s.name) === normalizeName(name));
-                                if (!student) {
-                                             student = { id: generateId(), name: name };
-                                             students2.push(student);
-                                }
-                                const studentGrades = { ...(grades2[student.id] || {}) };
-                                subjectsFromFile.forEach((sub, idx) => {
-                                             const val = row[idx + 1];
-                                             if (val !== undefined && val !== null && String(val).trim() !== "") {
-                                                            studentGrades[sub] = String(val).trim();
-                                             }
-                                });
-                                grades2[student.id] = studentGrades;
-                     });
-                     onApplyImport({ ...data, students: students2, subjects: subjects2, grades: grades2 });
-                     setImportPreview(null);
-            }
+return (
+<div className="min-h-screen bg-slate-50">
+<header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+<div className="flex items-center gap-2">
+<img src={SCHOOL_SHIELD_DATA_URL} alt="Escudo del colegio" className="w-9 h-9 object-contain" />
+<div>
+<p className="text-sm font-semibold text-slate-800">Panel del docente</p>
+<p className="text-xs text-slate-400">{data.students.length} alumnos · {data.areas.length} áreas</p>
+</div>
+</div>
+<div className="flex items-center gap-3"><ChangePassword data={data} persist={persist} /><button onClick={onLogout} className="text-xs font-medium text-slate-500 hover:text-red-600 transition">Salir</button></div>
+</header>
 
-            return (
-                     <div>
-                                <div className="flex flex-wrap gap-2 mb-4 items-center">
-                                             <input className="flex-1 min-w-[180px] px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Buscar alumno..." value={search} onChange={(e) => setSearch(e.target.value)} />
-                                             <form onSubmit={(e) => { e.preventDefault(); addSubject(newSubject); setNewSubject(""); }} className="flex gap-2">
-                                                            <input className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-36" placeholder="Nueva materia" value={newSubject} onChange={(e) => setNewSubject(e.target.value)} />
-                                                            <button className="bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium px-3 py-2 rounded-lg transition">Agregar</button>
-                                             </form>
-                                             <button type="button" onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                                                            className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg transition">
-                                                            Importar Excel
-                                             </button>
-                                             <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
-                                             <button onClick={onSave} disabled={!dirty || saving}
-                                                            className={`ml-auto text-sm font-medium px-4 py-2 rounded-lg transition ${dirty ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-slate-200 text-slate-400"}`}>
-                                                  {saving ? "Guardando..." : dirty ? "Guardar cambios" : "Guardado"}
-                                             </button>
-                                </div>
+<div className="px-4 pt-4">
+<div className="flex rounded-lg bg-slate-100 p-1 max-w-md">
+<button onClick={() => setTab("grades")} className={`flex-1 text-xs font-medium py-2 rounded-md transition ${tab === "grades" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>Notas</button>
+<button onClick={() => setTab("students")} className={`flex-1 text-xs font-medium py-2 rounded-md transition ${tab === "students" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>Alumnos</button>
+<button onClick={() => setTab("files")} className={`flex-1 text-xs font-medium py-2 rounded-md transition ${tab === "files" ? "bg-white shadow text-indigo-700" : "text-slate-500"}`}>Archivos</button>
+</div>
+</div>
 
-                          {importError && <p className="text-xs text-red-600 mb-3">{importError}</p>}
+{error && <div className="mx-4 mt-3 text-xs bg-red-50 text-red-600 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
-                          {importPreview && (
-                                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-4 text-sm">
-                                                 <p className="text-indigo-800 font-medium mb-1">Vista previa de importación</p>
-                                                 <p className="text-indigo-700 mb-3">
-                                                                  Se detectaron {importPreview.dataRows.length} alumno(s) y {importPreview.subjectsFromFile.length} materia(s): {importPreview.subjectsFromFile.join(", ")}. Los alumnos o materias nuevos se agregarán automáticamente.
-                                                 </p>
-                                                 <div className="flex gap-2">
-                                                                  <button onClick={confirmImport} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Aplicar cambios</button>
-                                                                  <button onClick={() => setImportPreview(null)} className="text-slate-500 text-sm font-medium px-4 py-2">Cancelar</button>
-                                                 </div>
-                                  </div>
-                                )}
+<main className="p-4">
+{tab === "students" && (
+<StudentsTab students={data.students} search={search} setSearch={setSearch} filteredStudents={filteredStudents} onAdd={addStudent} onRemove={removeStudent} />
+)}
+{tab === "grades" && (
+<GradesTab data={data} filteredStudents={filteredStudents} search={search} setSearch={setSearch}
+gradesBuffer={gradesBuffer} comportamientoBuffer={comportamientoBuffer}
+updateCriterio={updateCriterio} updateRecuperacion={updateRecuperacion} updateComportamiento={updateComportamiento}
+addArea={addArea} removeArea={removeArea} addCriterio={addCriterio} removeCriterio={removeCriterio}
+dirty={dirty} saving={saving} onSave={saveGrades} onApplyImport={applyImport} />
+)}
+{tab === "files" && (
+<FilesTab files={files} filesLoading={filesLoading} onUpload={onUploadFile} onDelete={onDeleteFile} />
+)}
+</main>
+</div>
+);
+}
 
-                          {data.subjects.length === 0 ? (
-                                  <p className="text-sm text-slate-400 bg-white border border-slate-200 rounded-xl px-4 py-6 text-center">Agrega al menos una materia para empezar a cargar notas.</p>
-                                ) : (
-                                  <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-                                                 <table className="text-sm min-w-full">
-                                                                  <thead>
-                                                                                     <tr className="bg-slate-50 text-slate-500 text-xs uppercase">
-                                                                                                          <th className="px-4 py-2 text-left sticky left-0 bg-slate-50">Alumno</th>
-                                                                                          {data.subjects.map((subj) => (
-                                                         <th key={subj} className="px-3 py-2 text-center whitespace-nowrap">
-                                                                                  <div className="flex items-center justify-center gap-1">{subj}<button onClick={() => removeSubject(subj)} className="text-slate-300 hover:text-red-500">✕</button></div>
-                                                         </th>
-                                                       ))}
-                                                                                          </tr>
-                                                                  </thead>
-                                                                  <tbody>
-                                                                       {students.length === 0 && (<tr><td colSpan={data.subjects.length + 1} className="px-4 py-6 text-center text-slate-400">Sin alumnos que mostrar.</td></tr>)}
-                                                                       {students.map((s) => (
-                                                       <tr key={s.id} className="border-t border-slate-100">
-                                                                              <td className="px-4 py-2 text-slate-700 whitespace-nowrap sticky left-0 bg-white">{s.name}</td>
-                                                            {data.subjects.map((subj) => (
-                                                                                <td key={subj} className="px-2 py-1.5 text-center">
-                                                                                                           <input className="w-16 text-center border border-slate-200 rounded-md px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                                                                                                                        value={(gradesBuffer[s.id] && gradesBuffer[s.id][subj]) || ""}
-                                                                                                                                        onChange={(e) => updateGrade(s.id, subj, e.target.value)} placeholder="-" />
-                                                                                     </td>
-                                                                              ))}
-                                                       </tr>
-                                                     ))}
-                                                                  </tbody>
-                                                 </table>
-                                  </div>
-                                )}
-                     </div>
-                   );
-          }
+function StudentsTab({ students, search, setSearch, filteredStudents, onAdd, onRemove }) {
+const [showForm, setShowForm] = useState(false);
+const [name, setName] = useState("");
+const [formError, setFormError] = useState("");
 
-          function FilesTab({ files, filesLoading, onUpload, onDelete }) {
-               const [label, setLabel] = useState("");
-               const [uploading, setUploading] = useState(false);
-               const [uploadError, setUploadError] = useState("");
-               const fileInputRef = React.useRef(null);
+async function handleAdd(e) {
+e.preventDefault();
+setFormError("");
+if (!name.trim()) return setFormError("Escribe el nombre completo del alumno.");
+const ok = await onAdd(name);
+if (ok !== false) { setName(""); setShowForm(false); }
+}
 
-          async function handleFileSelected(e) {
-               const file = e.target.files && e.target.files[0];
-               e.target.value = "";
-               if (!file) return;
-               setUploadError("");
-               setUploading(true);
-               const ok = await onUpload(file, label);
-               setUploading(false);
-               if (ok) setLabel("");
-               else setUploadError("No se pudo subir el archivo. Verifica el tamano (max. " + Math.round(MAX_FILE_BYTES / 1024) + " KB).");
-          }
+return (
+<div>
+<div className="flex gap-2 mb-4">
+<input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Buscar alumno..." value={search} onChange={(e) => setSearch(e.target.value)} />
+<button onClick={() => setShowForm((v) => !v)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-3 py-2 rounded-lg transition">+ Alumno</button>
+</div>
 
-          return (
-               <div>
-                    <p className="text-xs text-slate-500 mb-4">
-                         Sube imagenes, Excel u otros documentos con las notas. Los padres podran descargarlos desde la busqueda. Tamano maximo por archivo: {Math.round(MAX_FILE_BYTES / 1024)} KB.
-                    </p>
-                    <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 flex flex-wrap gap-2 items-center">
-                         <input className="flex-1 min-w-[180px] border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Nombre del archivo (opcional)" value={label} onChange={(e) => setLabel(e.target.value)} />
-                         <button type="button" disabled={uploading} onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">
-                              {uploading ? "Subiendo..." : "Subir archivo"}
-                         </button>
-                         <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" className="hidden" onChange={handleFileSelected} />
-                    </div>
-                    {uploadError && <p className="text-xs text-red-600 mb-3">{uploadError}</p>}
+{showForm && (
+<form onSubmit={handleAdd} className="bg-white border border-slate-200 rounded-xl p-4 mb-4 space-y-3">
+<div className="flex items-center justify-between">
+<p className="text-sm font-medium text-slate-700">Nuevo alumno</p>
+<button type="button" onClick={() => setShowForm(false)} className="text-slate-400">✕</button>
+</div>
+<input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Nombre y apellidos completos" value={name} onChange={(e) => setName(e.target.value)} />
+{formError && <p className="text-xs text-red-600">{formError}</p>}
+<button className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Guardar alumno</button>
+</form>
+)}
 
-                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                         <table className="w-full text-sm">
-                              <thead><tr className="bg-slate-50 text-slate-500 text-xs uppercase text-left"><th className="px-4 py-2">Archivo</th><th className="px-4 py-2 w-10"></th></tr></thead>
-                              <tbody>
-                                   {filesLoading && (<tr><td colSpan={2} className="px-4 py-6 text-center text-slate-400 text-sm">Cargando...</td></tr>)}
-                                   {!filesLoading && files.length === 0 && (<tr><td colSpan={2} className="px-4 py-6 text-center text-slate-400 text-sm">Aun no has subido archivos.</td></tr>)}
-                                   {files.map((f) => (
-                    <tr key={f.id} className="border-t border-slate-100">
-                         <td className="px-4 py-2 text-slate-700"><a href={f.dataUrl} download={f.name} className="text-indigo-700 hover:underline">{f.name}</a></td>
-                         <td className="px-4 py-2 text-right"><button onClick={() => onDelete(f.id)} className="text-slate-400 hover:text-red-600">Eliminar</button></td>
-                    </tr>
-                    ))}
-                              </tbody>
-                         </table>
-                    </div>
-               </div>
-               );
-          }
+<div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+<table className="w-full text-sm">
+<thead><tr className="bg-slate-50 text-slate-500 text-xs uppercase text-left"><th className="px-4 py-2">Nombre completo</th><th className="px-4 py-2 w-10"></th></tr></thead>
+<tbody>
+{filteredStudents.length === 0 && (
+<tr><td colSpan={2} className="px-4 py-6 text-center text-slate-400 text-sm">{students.length === 0 ? "Aún no has agregado alumnos." : "Sin resultados."}</td></tr>
+)}
+{filteredStudents.map((s) => (
+<tr key={s.id} className="border-t border-slate-100">
+<td className="px-4 py-2 text-slate-700">{s.name}</td>
+<td className="px-4 py-2 text-right"><button onClick={() => onRemove(s.id)} className="text-slate-400 hover:text-red-600">🗑</button></td>
+</tr>
+))}
+</tbody>
+</table>
+</div>
+</div>
+);
+}
 
-          ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+function ManageAreas({ areas, onAddArea, onRemoveArea, onAddCriterio, onRemoveCriterio }) {
+const [open, setOpen] = useState(false);
+const [newArea, setNewArea] = useState("");
+const [newCriterio, setNewCriterio] = useState({});
+
+return (
+<div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+<button type="button" onClick={() => setOpen((v) => !v)} className="text-sm font-medium text-indigo-700">
+{open ? "Ocultar gestión de áreas y criterios" : "Gestionar áreas y criterios"}
+</button>
+{open && (
+<div className="mt-3 space-y-4">
+<form onSubmit={(e) => { e.preventDefault(); onAddArea(newArea); setNewArea(""); }} className="flex gap-2">
+<input className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Nueva área (ej. Matemática)" value={newArea} onChange={(e) => setNewArea(e.target.value)} />
+<button className="bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium px-3 py-2 rounded-lg transition">Agregar área</button>
+</form>
+{areas.length === 0 && <p className="text-xs text-slate-400">Aún no hay áreas. Agrega la primera arriba.</p>}
+{areas.map((area) => (
+<div key={area.name} className="border border-slate-200 rounded-lg p-3">
+<div className="flex items-center justify-between mb-2">
+<p className="text-sm font-semibold text-slate-700">{area.name}</p>
+<button onClick={() => onRemoveArea(area.name)} className="text-xs text-red-500 hover:text-red-700">Eliminar área</button>
+</div>
+<ul className="space-y-1 mb-2">
+{(area.criterios || []).map((c) => (
+<li key={c} className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 rounded px-2 py-1">
+<span>{c}</span>
+<button onClick={() => onRemoveCriterio(area.name, c)} className="text-slate-400 hover:text-red-600">✕</button>
+</li>
+))}
+{(area.criterios || []).length === 0 && <li className="text-xs text-slate-400 italic">Sin criterios.</li>}
+</ul>
+<form onSubmit={(e) => { e.preventDefault(); onAddCriterio(area.name, newCriterio[area.name] || ""); setNewCriterio((prev) => ({ ...prev, [area.name]: "" })); }} className="flex gap-2">
+<input className="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs" placeholder="Nuevo criterio de evaluación" value={newCriterio[area.name] || ""} onChange={(e) => setNewCriterio((prev) => ({ ...prev, [area.name]: e.target.value }))} />
+<button className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">+ Criterio</button>
+</form>
+</div>
+))}
+</div>
+)}
+</div>
+);
+}
+
+function GradesTab({ data, filteredStudents, search, setSearch, gradesBuffer, comportamientoBuffer, updateCriterio, updateRecuperacion, updateComportamiento, addArea, removeArea, addCriterio, removeCriterio, dirty, saving, onSave, onApplyImport }) {
+const [selectedId, setSelectedId] = useState(null);
+const [importPreview, setImportPreview] = useState(null);
+const [importError, setImportError] = useState("");
+const fileInputRef = React.useRef(null);
+
+const selectedStudent = data.students.find((s) => s.id === selectedId) || null;
+
+function downloadTemplate() {
+const header = ["Nombre y apellidos"];
+data.areas.forEach((area) => {
+(area.criterios || []).forEach((crit) => {
+BIMESTRE_LABELS.forEach((b) => header.push(area.name + " - " + crit + " - " + b));
+});
+header.push(area.name + " - Recuperación");
+});
+header.push("COMPORTAMIENTO - B1", "COMPORTAMIENTO - B2", "COMPORTAMIENTO - B3", "COMPORTAMIENTO - B4", "COMPORTAMIENTO - Final", "COMPORTAMIENTO - Recuperación");
+
+const rows = [header];
+data.students.forEach((s) => {
+const row = [s.name];
+const sGrades = data.grades[s.id] || {};
+data.areas.forEach((area) => {
+const areaData = sGrades[area.name] || { criterios: {}, recuperacion: "" };
+(area.criterios || []).forEach((crit) => {
+const values = (areaData.criterios || {})[crit] || ["", "", "", ""];
+BIMESTRE_LABELS.forEach((b, idx) => row.push(values[idx] || ""));
+});
+row.push(areaData.recuperacion || "");
+});
+const comp = (data.comportamiento || {})[s.id] || { b: ["", "", "", ""], final: "", recuperacion: "" };
+row.push(comp.b[0] || "", comp.b[1] || "", comp.b[2] || "", comp.b[3] || "", comp.final || "", comp.recuperacion || "");
+rows.push(row);
+});
+
+const ws = XLSX.utils.aoa_to_sheet(rows);
+const wb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb, ws, "Notas");
+XLSX.writeFile(wb, "plantilla_notas.xlsx");
+}
+
+function handleFileChange(e) {
+const file = e.target.files && e.target.files[0];
+e.target.value = "";
+if (!file) return;
+setImportError("");
+const reader = new FileReader();
+reader.onload = (evt) => {
+try {
+const wb = XLSX.read(evt.target.result, { type: "array" });
+const sheet = wb.Sheets[wb.SheetNames[0]];
+const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+if (!rows.length) throw new Error("empty");
+const header = rows[0];
+const columns = [];
+for (let i = 1; i < header.length; i++) {
+const h = String(header[i] || "").trim();
+if (!h) continue;
+if (/^COMPORTAMIENTO/i.test(h)) {
+const field = h.split(" - ").slice(1).join(" - ").trim();
+columns.push({ type: "comportamiento", field: field, index: i });
+} else {
+const parts = h.split(" - ").map((p) => p.trim());
+if (parts.length === 3 && BIMESTRE_LABELS.indexOf(parts[2]) !== -1) {
+columns.push({ type: "criterio", area: parts[0], criterio: parts[1], bim: parts[2], index: i });
+} else if (parts.length === 2 && /recuperaci/i.test(parts[1])) {
+columns.push({ type: "recuperacion", area: parts[0], index: i });
+}
+}
+}
+const dataRows = rows.slice(1).filter((r) => r[0] && String(r[0]).trim());
+if (!columns.length || !dataRows.length) {
+setImportError("No se detectaron columnas o alumnos reconocibles. Usa la plantilla descargable como base.");
+return;
+}
+setImportPreview({ columns: columns, dataRows: dataRows });
+} catch (err) {
+setImportError("No se pudo leer el archivo. Sube un Excel (.xlsx) o CSV válido.");
+}
+};
+reader.readAsArrayBuffer(file);
+}
+
+function confirmImport() {
+if (!importPreview) return;
+const columns = importPreview.columns;
+const dataRows = importPreview.dataRows;
+const students2 = data.students.slice();
+const areas2 = data.areas.map((a) => ({ name: a.name, criterios: [...(a.criterios || [])] }));
+const grades2 = deepClone(data.grades);
+const comportamiento2 = deepClone(data.comportamiento || {});
+
+dataRows.forEach((row) => {
+const name = String(row[0]).trim();
+if (!name) return;
+let student = students2.find((s) => normalizeName(s.name) === normalizeName(name));
+if (!student) {
+student = { id: generateId(), name: name };
+students2.push(student);
+}
+columns.forEach((col) => {
+const raw = row[col.index];
+const val = (raw === undefined || raw === null) ? "" : String(raw).trim();
+if (val === "") return;
+if (col.type === "criterio") {
+let area = areas2.find((a) => a.name === col.area);
+if (!area) { area = { name: col.area, criterios: [] }; areas2.push(area); }
+if (area.criterios.indexOf(col.criterio) === -1) area.criterios.push(col.criterio);
+const bimIdx = BIMESTRE_LABELS.indexOf(col.bim);
+if (bimIdx === -1) return;
+if (!grades2[student.id]) grades2[student.id] = {};
+if (!grades2[student.id][col.area]) grades2[student.id][col.area] = { criterios: {}, recuperacion: "" };
+if (!grades2[student.id][col.area].criterios) grades2[student.id][col.area].criterios = {};
+if (!grades2[student.id][col.area].criterios[col.criterio]) grades2[student.id][col.area].criterios[col.criterio] = ["", "", "", ""];
+grades2[student.id][col.area].criterios[col.criterio][bimIdx] = val;
+} else if (col.type === "recuperacion") {
+if (!grades2[student.id]) grades2[student.id] = {};
+if (!grades2[student.id][col.area]) grades2[student.id][col.area] = { criterios: {}, recuperacion: "" };
+grades2[student.id][col.area].recuperacion = val;
+} else if (col.type === "comportamiento") {
+if (!comportamiento2[student.id]) comportamiento2[student.id] = { b: ["", "", "", ""], final: "", recuperacion: "" };
+if (/^final$/i.test(col.field)) comportamiento2[student.id].final = val;
+else if (/recuperaci/i.test(col.field)) comportamiento2[student.id].recuperacion = val;
+else {
+const bimIdx = BIMESTRE_LABELS.indexOf(col.field);
+if (bimIdx !== -1) comportamiento2[student.id].b[bimIdx] = val;
+}
+}
+});
+});
+
+onApplyImport({ ...data, students: students2, areas: areas2, grades: grades2, comportamiento: comportamiento2 });
+setImportPreview(null);
+}
+
+const importAreaCount = importPreview ? new Set(importPreview.columns.filter((c) => c.type !== "comportamiento").map((c) => c.area)).size : 0;
+
+return (
+<div>
+<ManageAreas areas={data.areas} onAddArea={addArea} onRemoveArea={removeArea} onAddCriterio={addCriterio} onRemoveCriterio={removeCriterio} />
+
+<div className="flex flex-wrap gap-2 mb-4 items-center">
+<input className="flex-1 min-w-[180px] px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Buscar alumno..." value={search} onChange={(e) => setSearch(e.target.value)} />
+<button type="button" onClick={downloadTemplate} className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg transition">Descargar plantilla</button>
+<button type="button" onClick={() => fileInputRef.current && fileInputRef.current.click()}
+className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg transition">
+Importar Excel
+</button>
+<input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
+<button onClick={onSave} disabled={!dirty || saving}
+className={`ml-auto text-sm font-medium px-4 py-2 rounded-lg transition ${dirty ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-slate-200 text-slate-400"}`}>
+{saving ? "Guardando..." : dirty ? "Guardar cambios" : "Guardado"}
+</button>
+</div>
+
+{importError && <p className="text-xs text-red-600 mb-3">{importError}</p>}
+
+{importPreview && (
+<div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-4 text-sm">
+<p className="text-indigo-800 font-medium mb-1">Vista previa de importación</p>
+<p className="text-indigo-700 mb-3">
+Se detectaron {importPreview.dataRows.length} alumno(s) y {importAreaCount} área(s). Los alumnos, áreas o criterios nuevos se agregarán automáticamente.
+</p>
+<div className="flex gap-2">
+<button onClick={confirmImport} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Aplicar cambios</button>
+<button onClick={() => setImportPreview(null)} className="text-slate-500 text-sm font-medium px-4 py-2">Cancelar</button>
+</div>
+</div>
+)}
+
+{filteredStudents.length > 0 && (
+<div className="flex flex-wrap gap-2 mb-4">
+{filteredStudents.map((s) => (
+<button key={s.id} onClick={() => setSelectedId(s.id)}
+className={`text-xs font-medium px-3 py-1.5 rounded-full border transition ${selectedId === s.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"}`}>
+{s.name}
+</button>
+))}
+</div>
+)}
+{filteredStudents.length === 0 && (
+<p className="text-sm text-slate-400 mb-4">{data.students.length === 0 ? "Aún no has agregado alumnos." : "Sin resultados."}</p>
+)}
+
+{selectedStudent ? (
+<LibretaTable areas={data.areas} student={selectedStudent} gradesBuffer={gradesBuffer} comportamientoBuffer={comportamientoBuffer}
+editable={true} onUpdateCriterio={updateCriterio} onUpdateRecuperacion={updateRecuperacion} onUpdateComportamiento={updateComportamiento} />
+) : (
+<p className="text-sm text-slate-400 bg-white border border-slate-200 rounded-xl px-4 py-6 text-center">Selecciona un alumno de la lista para ver o editar su libreta.</p>
+)}
+</div>
+);
+}
+
+function FilesTab({ files, filesLoading, onUpload, onDelete }) {
+const [label, setLabel] = useState("");
+const [uploading, setUploading] = useState(false);
+const [uploadError, setUploadError] = useState("");
+const fileInputRef = React.useRef(null);
+
+async function handleFileSelected(e) {
+const file = e.target.files && e.target.files[0];
+e.target.value = "";
+if (!file) return;
+setUploadError("");
+setUploading(true);
+const ok = await onUpload(file, label);
+setUploading(false);
+if (ok) setLabel("");
+else setUploadError("No se pudo subir el archivo. Verifica el tamano (max. " + Math.round(MAX_FILE_BYTES / 1024) + " KB).");
+}
+
+return (
+<div>
+<p className="text-xs text-slate-500 mb-4">
+Sube imagenes, Excel u otros documentos con las notas. Los padres podran descargarlos desde la busqueda. Tamano maximo por archivo: {Math.round(MAX_FILE_BYTES / 1024)} KB.
+</p>
+<div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 flex flex-wrap gap-2 items-center">
+<input className="flex-1 min-w-[180px] border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Nombre del archivo (opcional)" value={label} onChange={(e) => setLabel(e.target.value)} />
+<button type="button" disabled={uploading} onClick={() => fileInputRef.current && fileInputRef.current.click()}
+className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">
+{uploading ? "Subiendo..." : "Subir archivo"}
+</button>
+<input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" className="hidden" onChange={handleFileSelected} />
+</div>
+{uploadError && <p className="text-xs text-red-600 mb-3">{uploadError}</p>}
+
+<div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+<table className="w-full text-sm">
+<thead><tr className="bg-slate-50 text-slate-500 text-xs uppercase text-left"><th className="px-4 py-2">Archivo</th><th className="px-4 py-2 w-10"></th></tr></thead>
+<tbody>
+{filesLoading && (<tr><td colSpan={2} className="px-4 py-6 text-center text-slate-400 text-sm">Cargando...</td></tr>)}
+{!filesLoading && files.length === 0 && (<tr><td colSpan={2} className="px-4 py-6 text-center text-slate-400 text-sm">Aun no has subido archivos.</td></tr>)}
+{files.map((f) => (
+<tr key={f.id} className="border-t border-slate-100">
+<td className="px-4 py-2 text-slate-700"><a href={f.dataUrl} download={f.name} className="text-indigo-700 hover:underline">{f.name}</a></td>
+<td className="px-4 py-2 text-right"><button onClick={() => onDelete(f.id)} className="text-slate-400 hover:text-red-600">Eliminar</button></td>
+</tr>
+))}
+</tbody>
+</table>
+</div>
+</div>
+);
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 </script>
 </body>
 </html>
